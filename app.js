@@ -26,6 +26,7 @@ var systemwide = (function(){
   //add methods or variables. will be added through loose augmentation.
   //static strings
   bilibili.debugoutput = true;
+  bilibili.language = "en";
   bilibili.programversion = "v1.0.0";
   bilibili.welcometext = "Welcome to Bilibili. " + bilibili.programversion;
   bilibili.legalnotice = "请自觉遵守互联网相关的政策法规，严禁发布色情、暴力、反动的言论。";
@@ -97,120 +98,147 @@ var sensitiveloginstate = (function(){
 // thanks to: https://stackoverflow.com/questions/8750780
 // i have never used the crypto module before = =
 function encryptWithPublicKey() {
-  systemwide.qs = {
-    'act': 'getkey'
-  };
-  systemwide.reqoptions = {
-    'url': 'https://passport.bilibili.com/login',
-    'qs': systemwide.qs,
-    'method': 'GET'
-  };
-  requesttool(systemwide.reqoptions, function(error, response, body){
-    if (error) {
-      shellui.log(color_errormessage('[error] ' + error));
-      return false;
-    } else if (response.statusCode == 200) {
-      var publickeyobj = JSON.parse(body);
-      sensitiveloginstate.publickey = publickeyobj.key;
-      sensitiveloginstate.hash = publickeyobj.hash;
-      //make encryptedstring string
-      sensitiveloginstate.encryptstring = sensitiveloginstate.hash + sensitiveloginstate.plainpassword;
-      var key = new rsamodule(sensitiveloginstate.publickey, 'public');
-      sensitiveloginstate.encryptedstring = key.encrypt(sensitiveloginstate.encryptstring, 'base64', 'utf8');
-      shellui.log(color_debugmessage("[debug] encryptedstring: " + typeof sensitiveloginstate.encryptedstring));
-    } else {
-      shellui.log(color_debugmessage("[warn] " + response.statusCode + ": " + response.statusMessage));
+  return new Promise(function(resolve, reject) {
+    systemwide.qs = {
+      'act': 'getkey'
     };
+    systemwide.reqoptions = {
+      'url': 'https://passport.bilibili.com/login',
+      'qs': systemwide.qs,
+      'method': 'GET'
+    };
+      requesttool(systemwide.reqoptions, function(error, response, body){
+      if (error) {
+        shellui.log(color_errormessage('[error] ' + error));
+        reject("Problem connecting to the internet.");
+      } else if (response.statusCode == 200) {
+        var publickeyobj = JSON.parse(body);
+        sensitiveloginstate.publickey = publickeyobj.key;
+        sensitiveloginstate.hash = publickeyobj.hash;
+        //make encryptedstring string
+        sensitiveloginstate.encryptstring = sensitiveloginstate.hash + sensitiveloginstate.plainpassword;
+        var key = new rsamodule(sensitiveloginstate.publickey, 'public');
+        sensitiveloginstate.encryptedstring = key.encrypt(sensitiveloginstate.encryptstring, 'base64', 'utf8');
+        shellui.log(color_debugmessage("[debug] encryptedstring: " + sensitiveloginstate.encryptedstring));
+        resolve(true);
+      } else {
+        shellui.log(color_debugmessage("[warn] " + response.statusCode + ": " + response.statusMessage));
+        reject("Service not working properly.");
+      };
+    });
   });
 };
 
 //function to store login cookies
 function getAndStoreLoginCookies() {
-  //obtain access key
-  shellui.log(color_debugmessage("[debug] encryptedstring: " + sensitiveloginstate.encryptedstring));
-  systemwide.qs = {
-    'userid': sensitiveloginstate.username,
-    'pwd': sensitiveloginstate.encryptedstring.toString()
-  };
-  systemwide.reqoptions = {
-    'url': 'https://account.bilibili.com/api/login/v2',
-    'method': 'GET',
-    'qs': systemwide.qs
-  };
-  requesttool(systemwide.reqoptions, function(error, response, body){
-    if (error) {
-      shellui.log(color_errormessage('[error] ' + error));
-      return false;
-    } else if (response.statusCode == 200){
-      var accesskeyobj = JSON.parse(body);
-      if (accesskeyobj.code != 0) {
-        shellui.log(color_errormessage("[error] " + accesskeyobj.code));
-      } else {
-        systemwide.mid = accesskeyobj.mid.toString();
-        var accesskey = accesskeyobj.access_key;
-        //obtain cookie string
-        systemwide.qs = {
-          'access_key': accesskey
-        };
-        systemwide.reqoptions = {
-          'url': 'https://api.kaaass.net/biliapi/user/sso',
-          'method': 'GET',
-          'qs': systemwide.qs
-        };
-        requesttool(systemwide.reqoptions, function(error, response, body){
-          if (error) {
-            shellui.log(color_errormessage('[error] ' + error));
-            return false;
-          } else if (response.statusCode == 200) {
-            var cookiestrobj = JSON.parse(body);
-            if (cookiestrobj.status === 'OK') {
-              sensitiveloginstate.cookiestring = cookiestrobj.cookie;
-              //save cookie string to local file
-              sensitiveloginstate.cookiestring.pipe(filesystem.createWriteStream(systemwide.mid + ".state"));
-            } else {
-              shellui.log(color_errormessage('[error] ' + cookiestrobj.status + cookiestrobj.msg));
+  return new Promise(function(resolve, reject) {
+    //obtain access key
+    shellui.log(color_debugmessage("[debug] encryptedstring: " + sensitiveloginstate.encryptedstring));
+    systemwide.qs = {
+      'userid': sensitiveloginstate.username,
+      'pwd': sensitiveloginstate.encryptedstring
+    };
+    systemwide.reqoptions = {
+      'url': 'https://account.bilibili.com/api/login/v2',
+      'method': 'GET',
+      'qs': systemwide.qs
+    };
+    requesttool(systemwide.reqoptions, function(error, response, body){
+      if (error) {
+        shellui.log(color_errormessage('[error] ' + error));
+        reject("Problem connecting to the internet.");
+      } else if (response.statusCode == 200){
+        var accesskeyobj = JSON.parse(body);
+        if (accesskeyobj.code != 0) {
+          shellui.log(color_errormessage("[error] " + accesskeyobj.code));
+          reject("Incorrect password.");
+        } else {
+          systemwide.mid = accesskeyobj.mid.toString();
+          var accesskey = accesskeyobj.access_key;
+          //obtain cookie string
+          systemwide.qs = {
+            'access_key': accesskey
+          };
+          systemwide.reqoptions = {
+            'url': 'https://api.kaaass.net/biliapi/user/sso',
+            'method': 'GET',
+            'qs': systemwide.qs
+          };
+          requesttool(systemwide.reqoptions, function(error, response, body){
+            if (error) {
+              shellui.log(color_errormessage('[error] ' + error));
+              reject("Problem connecting to the internet.");
+            } else if (response.statusCode == 200) {
+              var cookiestrobj = JSON.parse(body);
+              if (cookiestrobj.status === 'OK') {
+                sensitiveloginstate.cookiestring = cookiestrobj.cookie;
+                //save cookie string to local file
+                sensitiveloginstate.cookiestring.pipe(filesystem.createWriteStream(systemwide.mid + ".state"));
+                resolve(true);
+              } else {
+                shellui.log(color_errormessage('[error] ' + cookiestrobj.status + cookiestrobj.msg));
+                reject("Incorrect password.");
+              }
             }
-          }
-        });
+          });
+        }
+      } else {
+        reject("Service not running properly.");
       }
-    }
+    });
   });
 };
 
 //function to read and mount login cookies
 function mountAndValidateLoginCookies() {
-  var f = systemwide.mid + ".state";
-  filesystem.access(f, filesystem.constants.F_OK, (err) => {
-    if (!err) {
-      sensitiveloginstate.cookiestring = filesystem.createReadStream(systemwide.mid + '.state').toString();
-      //validate whether cookies are valid
-      systemwide.reqoptions = {
-        "url": 'https://account.bilibili.com/identify/index',
-        "method": 'GET',
-        "headers": {
-          'DNT': 1,
-          'Cookie': sensitiveloginstate.cookiestring
-        }
-      };
-      requesttool(systemwide.reqoptions, function(error, response, body){
-        if (error) {
-          shellui.log(color_errormessage("[error] " + error));
-        } else if (response.statusCode == 200) {
-          var identifyobj = JSON.parse(body);
-          if (identifyobj.code == 0) { //验证成功
-            //determine bilijct value, which will be used later
-            sensitiveloginstate.bilijct = sensitiveloginstate.cookiestring.match(/bili_jct=(.+);/);
-            shellui.log(color_debugmessage('[debug] bili_jct = ' + sensitiveloginstate.bilijct));
-            shellui.log(chalk.greenBright(systemwide.loginsuccessfulprompt));
-          } else {
-            shellui.log(color_debugmessage("[warn] Login failed or expired"));
+  return new Promise(function(resolve, reject) {
+    var f = systemwide.mid + ".state";
+    filesystem.access(f, filesystem.constants.F_OK, (err) => {
+      if (!err) {
+        sensitiveloginstate.cookiestring = filesystem.createReadStream(systemwide.mid + '.state').toString();
+        //validate whether cookies are valid
+        systemwide.reqoptions = {
+          "url": 'https://account.bilibili.com/identify/index',
+          "method": 'GET',
+          "headers": {
+            'DNT': 1,
+            'Cookie': sensitiveloginstate.cookiestring
           }
-        }
-      });
-    }
+        };
+        requesttool(systemwide.reqoptions, function(error, response, body){
+          if (error) {
+            shellui.log(color_errormessage("[error] " + error));
+          } else if (response.statusCode == 200) {
+            var identifyobj = JSON.parse(body);
+            if (identifyobj.code == 0) { //验证成功
+              //determine bilijct value, which will be used later
+              sensitiveloginstate.bilijct = sensitiveloginstate.cookiestring.match(/bili_jct=(.+);/);
+              shellui.log(color_debugmessage('[debug] bili_jct = ' + sensitiveloginstate.bilijct));
+              shellui.log(chalk.greenBright(systemwide.loginsuccessfulprompt));
+              resolve(true);
+            } else {
+              shellui.log(color_debugmessage("[warn] Login failed or expired"));
+              reject("Session failed.");
+            }
+          }
+        });
+      } else {
+        reject("File system error.");
+      }
+    });
   });
 };
 
+//async function that bundles the above three functions, and to provide error handling
+async function loginBundle() {
+  try {
+    let a = await encryptWithPublicKey();
+    let b = await getAndStoreLoginCookies();
+    let c = await mountAndValidateLoginCookies();
+  } catch (err) {
+    shellui.log(color_errormessage('[error] ' + err));
+  }
+}
 //Commands.
 
 shellui.command('mod <mode>') //state: completed
@@ -218,6 +246,7 @@ shellui.command('mod <mode>') //state: completed
   .description('Switch between preset modes.')
   .autocomplete(['account', 'dynamic', 'idle'])
   .action(function(args,callback){
+    shellui.hide();
     switch (args.mode) {
       case "account":
         systemwide.mod = "account";
@@ -232,6 +261,7 @@ shellui.command('mod <mode>') //state: completed
         this.log(color_errormessage("[error] " + systemwide.illegalmode));
     }
     shellui.delimiter(systemwide.refreshCommandPrompt());
+    shellui.show();
     callback();
   });
 
@@ -239,10 +269,12 @@ shellui.command('av <aid>') //state: completed
   .option('')
   .description('Assign an AV number and enter the video mode.')
   .action(function(args,callback){
+    shellui.hide();
     systemwide.mod = "video";
     systemwide.objectstring = "av" + args.aid;
     systemwide.resid = args.aid;
     shellui.delimiter(systemwide.refreshCommandPrompt());
+    shellui.show();
     callback();
   });
 
@@ -251,6 +283,7 @@ shellui.command('open [uid]') //state: completed
   .description('Opens specific resource in browser.')
   .alias('o')
   .action(function(args, callback){
+    shellui.hide();
     switch (systemwide.mod) {
       case "video":
         if (args.uid) {
@@ -298,12 +331,14 @@ shellui.command('open [uid]') //state: completed
         this.log(color_errormessage('[error] ' + systemwide.illegalmode));
     }
     shellui.delimiter(systemwide.refreshCommandPrompt());
+    shellui.show();
     callback();
   })
 
 shellui.command('info [uid]')
   .description('Shows information of the selected resource.')
   .action(function(args, callback){
+    shellui.hide();
     switch (systemwide.mod) {
       case "video":
         if (args.uid) {
@@ -425,6 +460,7 @@ shellui.command('info [uid]')
         this.log(color_errormessage("[error] " + systemwide.illegalmode));
     }
     shellui.delimiter(systemwide.refreshCommandPrompt());
+    shellui.show();
     callback();
   });
 
@@ -451,36 +487,17 @@ shellui.command('login')
       var accountobj = await interactiveui(logincredentials, {onCancel});
       //this.log(accountobj.username);
       shellui.log(chalk.greenBright('[info] ' + systemwide.logginginprompt));
+      shellui.hide();
       if (accountobj.username && accountobj.password && accountobj.username !="" && accountobj.password !="") {
       //make accesskey request.
       sensitiveloginstate.plainpassword = accountobj.password;
       sensitiveloginstate.username = accountobj.username;
-      encryptWithPublicKey();
-      getAndStoreLoginCookies();
-      mountAndValidateLoginCookies();
-      shellui.log(color_debugmessage('[debug] code ran here, line 466'));
-      /*******
-      switch (encryptWithPublicKey()) {
-        case true:
-          switch (getAndStoreLoginCookies()) {
-            case true:
-            switch (mountAndValidateLoginCookies()) {
-              case true:
-              shellui.log(color_debugmessage("[debug] code ran here, line 477"));
-                break;
-              default:
-            }
-              break;
-            default:
-          }
-          break;
-        default:
-      }
-      ******/
+      loginBundle();
     } else {
       shellui.log(color_errormessage("[error] Illegal input."));
     }
       shellui.delimiter(systemwide.refreshCommandPrompt());
+      shellui.show();
       callback();
     })();
 });
@@ -489,6 +506,7 @@ shellui.command('catch [mid]')
   .description('Specify an upuser and enter the upuser mode.')
   .action(function(args, callback) {
     (async () => {
+      shellui.hide();
       if (!args.mid) {
       this.log("No user mid specified. Would you like to search for an upuser?");
         let searchfield = [
@@ -532,6 +550,7 @@ shellui.command('catch [mid]')
       // TODO: complete logic here. request the net and determine whom the mid refers to, and then set systemwide variables.
     }
       systemwide.refreshCommandPrompt();
+      shellui.show();
       callback();
     })();
   });
